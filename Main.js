@@ -77,12 +77,12 @@ function setupDailyTrigger() {
  * 日次実行メイン関数
  */
 function dailySystemRun() {
-  log('=== システム実行開始 ===');
+  log('--- システム実行開始 ---');
   try {
     processWebClass();
     processClassroom();
     processTasksSync();
-    log('=== システム実行完了 ===');
+    log('--- システム実行完了 ---');
   } catch (e) {
     log(`🚨 致命的エラー中断: ${e.toString()}\n認証情報やTasks連携設定を確認してください。`);
   }
