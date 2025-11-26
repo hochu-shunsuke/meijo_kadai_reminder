@@ -120,8 +120,15 @@ function processTasksSync() {
           } catch (e) { dueDateObj = null; }
         }
 
-        // 期限切れチェック
-        if (dueDateObj && dueDateObj.getTime() < new Date().getTime()) {
+        // ★★★ 期限がない、または解析できなかった場合は登録をスキップ (今回の修正) ★★★
+        if (!dueDateObj) {
+          log(`📝 期限がないため、Tasks登録をスキップ: [${course}] ${title}`);
+          return; // この行の処理を終了し、次の行へ進む
+        }
+        // ★★★ ------------------------------------------------------------- ★★★
+
+        // 期限切れチェック (dueDateObjは確定)
+        if (dueDateObj.getTime() < new Date().getTime()) {
           data[i][7] = 'EXPIRED';
           isUpdated = true;
           return;
@@ -131,25 +138,22 @@ function processTasksSync() {
           const newTask = {};
           let dueDisplay = '期限なし';
 
-          if (dueDateObj) {
-            // --- [改善案 5] Tasksタイトル形式の最適化 ---
-            const timeUntilDue = (dueDateObj.getTime() - new Date().getTime()) / (1000 * 3600 * 24);
-            const isUrgent = timeUntilDue <= 3 && timeUntilDue >= 0;
+          // dueDateObj が null でないことは確定済み
 
-            dueDisplay = Utilities.formatDate(dueDateObj, Session.getScriptTimeZone(), 'MM/dd(E) HH:mm');
-            newTask.title = `${isUrgent ? '🔥 ' : ''}[${course}] ${title} (${dueDisplay}まで)`;
+          // --- [改善案 5] Tasksタイトル形式の最適化 ---
+          const timeUntilDue = (dueDateObj.getTime() - new Date().getTime()) / (1000 * 3600 * 24);
+          const isUrgent = timeUntilDue <= 3 && timeUntilDue >= 0;
 
-            // --- [改善案 6] 期限設定精度の向上 (時刻がない場合は23:59に設定) ---
-            let taskDueDate = new Date(dueDateObj.getTime());
-            // 時刻情報が含まれていないかチェック
-            if (!rawDue.match(/(\d{1,2}:\d{2})/) && !rawDue.match(/(\d{1,2}時\d{2}分)/)) {
-              taskDueDate.setHours(23, 59, 0, 0); // 23:59:00に設定
-            }
-            newTask.due = taskDueDate.toISOString(); // Tasks APIはRFC3339形式（UTC）を要求
+          dueDisplay = Utilities.formatDate(dueDateObj, Session.getScriptTimeZone(), 'MM/dd(E) HH:mm');
+          newTask.title = `${isUrgent ? '🔥 ' : ''}[${course}] ${title} (${dueDisplay}まで)`;
 
-          } else {
-            newTask.title = `[${course}] ${title}`;
+          // --- [改善案 6] 期限設定精度の向上 ---
+          let taskDueDate = new Date(dueDateObj.getTime());
+          // 時刻情報が含まれていないかチェック
+          if (!rawDue.match(/(\d{1,2}:\d{2})/) && !rawDue.match(/(\d{1,2}時\d{2}分)/)) {
+            taskDueDate.setHours(23, 59, 0, 0); // 23:59:00に設定
           }
+          newTask.due = taskDueDate.toISOString();
 
           newTask.notes = `リンク:\n${link}\n\n期限: ${dueDisplay}\nソース: ${src}`;
 
@@ -180,7 +184,7 @@ function _cleanupOldRows(ss, targetSheetNames) {
 
   let cleanupDays = 30;
   try {
-    cleanupDays = getSetting('CLEANUP_DAYS'); // AppConfig.gs から読み込み
+    cleanupDays = getSetting('CLEANUP_DAYS');
   } catch (e) {
     log(`⚠️ 設定シートからCLEANUP_DAYSを取得できませんでした。デフォルトの${cleanupDays}日を使用します。`);
   }
