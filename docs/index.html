@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>名城大生のための課題管理リマインダー</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <main>
+        <!-- Hero Section -->
+        <section class="hero">
+            <div class="container hero-container">
+                <div class="hero-content">
+                    <h1 class="hero-title">名城大学<br>課題リマインド</h1>
+                    <p class="hero-desc">
+                        WebClassとClassroomの課題をぜーんぶ、<br>
+                        ウィジェットと通知でお知らせ。<br>
+                        課題のやり忘れとはおさらばです。
+                    </p>
+                    <div class="hero-actions">
+                        <a href="#how-to" class="btn btn-primary">
+                            使い方を見る！
+                        </a>
+                    </div>
+                </div>
+                <div class="hero-image">
+                    <img src="hero.png" alt="スマホウィジェットのイメージ" style="height: 100%; max-height: 400px; width: auto; display: block; margin-left: auto; margin-right: auto;">
+                </div>
+            </div>
+        </section>
+
+        <!-- Features -->
+        <section class="section features">
+            <div class="container">
+                <div class="feature-grid">
+                    <div class="feature-item">
+                        <h3>自動取得</h3>
+                        <p>毎日決まった時間にWebClassとClassroomをチェックします。</p>
+                    </div>
+                    <div class="feature-item">
+                        <h3>スマホ通知</h3>
+                        <p>Google Tasksアプリを入れれば、締め切り前に通知が届きます。</p>
+                    </div>
+                    <div class="feature-item">
+                        <h3>簡単設定</h3>
+                        <p>配布しているスプレッドシートのメニューから設定するだけ。</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Important Warning Section -->
+        <section class="section warning-section">
+            <div class="container">
+                <div class="warning-box">
+                    <h2 class="section-title">最初にお読みください</h2>
+                    <p class="section-desc">
+                        このシステムは、個人のGoogleアカウントと混ざると正しく動作しません。<br>
+                        必ず<strong>「シークレットウィンドウ（プライベートモード）」</strong>を使用してください。
+                    </p>
+                    
+                    <div class="step-card">
+                        <div class="step-image-placeholder">
+                            <img src="https://placehold.co/800x400/f3f4f6/9ca3af?text=Chromeのメニューから%0A「新しいシークレットウィンドウ」を開く画像" alt="シークレットウィンドウの開き方">
+                        </div>
+                        <div class="step-content">
+                            <h3>シークレットウィンドウで開く</h3>
+                            <p>Chrome右上のメニューから「新しいシークレットウィンドウ」を選択し、大学のアカウントでログインしてからスプレッドシートを開いてください。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- How to Use -->
+        <section class="section how-to" id="how-to">
+            <div class="container">
+                <h2 class="section-title">使い方</h2>
+                
+                <div class="steps">
+                    <!-- Step 1 -->
+                    <div class="step-item">
+                        <div class="step-number">01</div>
+                        <div class="step-content">
+                            <h3>スプレッドシートをコピー</h3>
+                            <p>配布URLを開き、自分のGoogleドライブにコピーを保存します。</p>
+                        </div>
+                        <div class="step-image">
+                            <img src="https://placehold.co/600x300/f3f4f6/9ca3af?text=「コピーを作成」ボタンを押す画像" alt="スプレッドシートのコピー">
+                        </div>
+                    </div>
+
+                    <!-- Step 2 -->
+                    <div class="step-item">
+                        <div class="step-number">02</div>
+                        <div class="step-content">
+                            <h3>WebClass認証設定</h3>
+                            <p>メニューの「課題自動取得システム」から認証情報を設定します。<br>パスワードは安全に保存されます。</p>
+                        </div>
+                        <div class="step-image">
+                            <img src="https://placehold.co/600x300/f3f4f6/9ca3af?text=メニューから「認証情報設定」を%0A選択している画像" alt="認証設定メニュー">
+                        </div>
+                    </div>
+
+                    <!-- Step 3 -->
+                    <div class="step-item">
+                        <div class="step-number">03</div>
+                        <div class="step-content">
+                            <h3>自動実行をオンにする</h3>
+                            <p>「Tasks・自動実行設定」から、通知を受け取りたいリスト名と時間を設定します。</p>
+                        </div>
+                        <div class="step-image">
+                            <img src="https://placehold.co/600x300/f3f4f6/9ca3af?text=設定ダイアログで%0A「設定を保存して連携」を押す画像" alt="自動実行設定">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CTA -->
+        <section class="section cta-section">
+            <div class="container">
+                <h2>思ってるより、便利かもしれない</h2>
+                <a href="https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID_HERE" target="_blank" class="btn btn-primary">
+                    スプレッドシートを入手
+                </a>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2025 Meijo Remind Project. Not affiliated with Meijo University.</p>
+            <a href="https://github.com/hochu-shunsuke/PBL_kadai_reminder" class="github-link">View on GitHub</a>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
