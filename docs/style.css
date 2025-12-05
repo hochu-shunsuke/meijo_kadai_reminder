@@ -44,7 +44,7 @@ body {
     color: #fff;
     text-decoration: none;
     padding: 12px 32px;
-    border-radius: 8px;
+    border-radius: 100px;
     font-weight: 600;
     transition: all 0.2s ease;
     border: 1px solid var(--accent-color);
@@ -136,20 +136,53 @@ body {
 
 /* Warning Section */
 .warning-box {
-    background-color: var(--warning-bg);
-    border: 1px solid #fecdd3;
-    border-radius: 16px;
-    padding: 40px;
     text-align: center;
+    padding: 20px 0;
 }
 
 .warning-box .section-title {
-    color: var(--warning-text);
+    color: var(--text-main);
+    margin-bottom: 24px;
 }
 
 .warning-box .section-desc {
-    color: var(--warning-text);
-    margin-bottom: 32px;
+    color: var(--text-main);
+    font-size: 1.1rem;
+    margin-bottom: 40px;
+    line-height: 1.8;
+}
+
+.step-card {
+    background: #f9fafb;
+    border-radius: 16px;
+    overflow: hidden;
+    max-width: 600px;
+    margin: 0 auto;
+    text-align: left;
+    border: 1px solid var(--border-color);
+}
+
+.step-card .step-image-placeholder img {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.step-card .step-content {
+    padding: 24px;
+}
+
+.step-card h3 {
+    font-size: 1.1rem;
+    margin-bottom: 8px;
+    font-weight: 700;
+}
+
+.step-card p {
+    font-size: 0.9rem;
+    color: var(--text-sub);
+    margin: 0;
 }
 
 /* Features */
@@ -186,7 +219,7 @@ body {
 .step-number {
     font-size: 3rem;
     font-weight: 800;
-    color: #f3f4f6;
+    color: #c6c6c6ff;
     line-height: 1;
 }
 
