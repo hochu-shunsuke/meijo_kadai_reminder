@@ -58,6 +58,9 @@ function processWebClass() {
 
   const dashHtml = client.fetchWithSession(dashUrl);
   const courses = WebClassParser.parseDashboard(dashHtml);
+  if (courses.length === 0) {
+    Health.add('WebClassのコースを1件も検出できませんでした。WebClass側のHTML構造が変わった可能性があります。');
+  }
 
   const rows = [];
   courses.forEach(c => {
@@ -70,8 +73,8 @@ function processWebClass() {
         // Tasks ID(6) と フラグ(7) は空でセット
         rows.push(['WebClass', cName, a.title, a.start, a.end, a.shareLink, '', '']);
       });
-    } catch (e) { 
-      log(`⚠️ ${cName} の課題取得中にエラー: ${e.message}`); 
+    } catch (e) {
+      Health.add(`WebClass「${cName}」の課題取得に失敗: ${e.message}`);
     }
     Utilities.sleep(500); 
   });
@@ -81,37 +84,99 @@ function processWebClass() {
 }
 
 /**
+ * Classroomのコース一覧をページネーション込みで全件取得
+ */
+function _listAllClassroomCourses() {
+  const out = [];
+  let pageToken = null;
+  do {
+    const res = Classroom.Courses.list({
+      courseStates: ['ACTIVE'],
+      pageSize: 100,
+      pageToken: pageToken || undefined
+    });
+    if (res.courses) out.push(...res.courses);
+    pageToken = res.nextPageToken;
+  } while (pageToken);
+  return out;
+}
+
+/**
+ * 1コース分の課題をページネーション込みで全件取得
+ */
+function _listAllCourseWork(courseId) {
+  const out = [];
+  let pageToken = null;
+  do {
+    const res = Classroom.Courses.CourseWork.list(courseId, {
+      courseWorkStates: ['PUBLISHED'],
+      pageSize: 100,
+      pageToken: pageToken || undefined
+    });
+    if (res.courseWork) out.push(...res.courseWork);
+    pageToken = res.nextPageToken;
+  } while (pageToken);
+  return out;
+}
+
+/**
  * Google Classroomから課題を取得し、シートに書き込む
  */
 function processClassroom() {
   log('--- Classroom課題取得開始 ---');
-  try {
-    const courses = Classroom.Courses.list({ courseStates: ['ACTIVE'] }).courses;
-    const rows = [];
-    if(courses) {
-      courses.forEach(c => {
-        const works = Classroom.Courses.CourseWork.list(c.id, { courseWorkStates: ['PUBLISHED'] }).courseWork;
-        if (!works) return;
-        
-        works.forEach(w => {
-          if (!w.dueDate) return; 
 
-          const d = w.dueDate; 
-          const t = w.dueTime || {hours:0,minutes:0};
-          
-          const dt = new Date(d.year, d.month-1, d.day, t.hours||0, t.minutes||0);
-          const dueStr = Utilities.formatDate(dt, Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm');
-          
-          // Tasks ID(6) と フラグ(7) は空でセット
-          rows.push(['Classroom', c.name, w.title, '', dueStr, w.alternateLink, '', '']);
-        });
-      });
-    }
-    SheetUtils.writeToSheet(SHEET_NAME_CLASSROOM, rows);
-    log('--- Classroom課題取得完了 ---');
-  } catch (e) { 
-    log(`🚨 Classroom取得エラー: ${e.message}`); 
+  let courses;
+  try {
+    courses = _listAllClassroomCourses();
+  } catch (e) {
+    log(`🚨 Classroomコース一覧の取得に失敗: ${e.message}`);
+    return;
   }
+  log(`Classroomコースを${courses.length}件検出`);
+
+  const rows = [];
+  let failed = 0;
+
+  // コース単位でtryを切る。1コースの失敗で全滅させない。
+  courses.forEach(c => {
+    try {
+      const works = _listAllCourseWork(c.id);
+      let dated = 0;
+
+      works.forEach(w => {
+        if (!w.dueDate) return;
+
+        const d = w.dueDate;
+        const t = w.dueTime || {};
+        // dueDate/dueTime はAPI仕様上UTC。UTCとして組み立ててからスクリプトのTZで整形する。
+        const dt = new Date(Date.UTC(d.year, d.month - 1, d.day, t.hours || 0, t.minutes || 0));
+        const dueStr = Utilities.formatDate(dt, Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm');
+
+        rows.push(['Classroom', c.name, w.title, '', dueStr, w.alternateLink, '', '']);
+        dated++;
+      });
+
+      log(`  ✅ ${c.name}: 課題${works.length}件 / 期限付き${dated}件`);
+    } catch (e) {
+      failed++;
+      Health.add(`Classroom「${c.name}」の課題取得に失敗: ${e.message}`);
+    }
+  });
+
+  if (courses.length === 0) {
+    Health.add('ClassroomのACTIVEなコースが0件でした。学期の切り替わりでアーカイブされた可能性があります。');
+  } else if (failed === courses.length) {
+    Health.add('Classroomの全コースで課題取得に失敗しました。OAuthスコープ不足が濃厚です (classroom.coursework.me.readonly)。');
+  }
+
+  // 全滅時に既存シートを空で上書きして消し飛ばさない
+  if (rows.length === 0 && (failed > 0 || courses.length === 0)) {
+    log('⚠️ 取得0件かつ失敗ありのため、シート上書きをスキップしました（既存データを保持）。');
+    return;
+  }
+
+  SheetUtils.writeToSheet(SHEET_NAME_CLASSROOM, rows);
+  log('--- Classroom課題取得完了 ---');
 }
 
 /**
@@ -263,8 +328,8 @@ function processTasksSync() {
         originalRow[7] = 'REGISTERED'; 
         sheetContext.updated = true;
         log(`Tasks登録: ${task.title}`);
-      } catch(e) { 
-        log(`Tasks登録失敗: ${title} - ${e.message}`); 
+      } catch(e) {
+        Health.add(`Tasksへの登録に失敗: ${title} - ${e.message}`);
       }
     }
   });

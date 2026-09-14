@@ -21,7 +21,6 @@ const MAX_REDIRECTS = 15;
 const REGEX = {
   ID: /id=([a-f0-9]+)/,
   REDIRECT: /(?:window\.location\.href\s*=\s*|content\s*=\s*[\"']0;\s*URL=)['"]([^\"']+)[\"']/,
-  COURSE_LINK: /\/webclass\/course\.php\/[a-f0-9]+/,
   SAML_RESPONSE: /<input type="hidden" name="SAMLResponse" value="([^"]+)"/,
   RELAY_STATE: /<input type="hidden" name="RelayState" value="([^"]+)"/,
   FORM_ACTION: /<form method="post" action="([^"]+)"/

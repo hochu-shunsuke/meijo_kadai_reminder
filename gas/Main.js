@@ -47,9 +47,10 @@ function runPostTasksSetup(settings) {
     // 1. Tasksリストの連携・作成はUtils.gsのsaveTasksDataFromHtml内で完了しています
 
     // 2. トリガー設定
-    setupDailyTrigger(Number(settings.triggerHour));
+    setupDailyTrigger(settings.triggerHour);
 
-    ui.alert(`✅ 設定完了\nTasksリスト「${settings.taskListName}」と連携し、毎日${settings.triggerHour}時台の自動実行を設定しました。`);
+    const times = parseTriggerHours(settings.triggerHour).map(h => `${h}時台`).join('・');
+    ui.alert(`✅ 設定完了\nTasksリスト「${settings.taskListName}」と連携し、毎日 ${times} の自動実行を設定しました。`);
   } catch (e) {
     log(`🚨 設定エラー: ${e.message}`);
     throw e; // HTML側にエラーを返す
@@ -57,35 +58,27 @@ function runPostTasksSetup(settings) {
 }
 
 /**
- * 定期実行トリガーの設定（最適化済み）
+ * 定期実行トリガーの設定。
+ * 複数時刻に対応（例: "6,18" で1日2回）。
+ * 毎回すべて作り直すので、何度実行しても重複しない。
  */
-function setupDailyTrigger(hour) {
-  const triggers = ScriptApp.getProjectTriggers();
-  let existingTrigger = null;
+function setupDailyTrigger(hourSpec) {
+  const hours = parseTriggerHours(hourSpec);
 
-  for (const t of triggers) {
+  // 既存の同ハンドラのトリガーを一旦すべて削除
+  let removed = 0;
+  for (const t of ScriptApp.getProjectTriggers()) {
     if (t.getHandlerFunction() === SETUP_FUNCTION) {
-      existingTrigger = t;
-      break;
+      ScriptApp.deleteTrigger(t);
+      removed++;
     }
   }
 
-  // 既に同じ時間のトリガーがあれば何もしない
-  const currentHour = Settings.getSetting('triggerHour');
-  if (existingTrigger && currentHour == hour) {
-    log('✅ トリガー設定スキップ: 変更なし');
-    return;
+  for (const h of hours) {
+    ScriptApp.newTrigger(SETUP_FUNCTION).timeBased().everyDays(1).atHour(h).create();
   }
 
-  // 古いトリガー削除
-  if (existingTrigger) {
-    ScriptApp.deleteTrigger(existingTrigger);
-  }
-
-  // 新規作成
-  ScriptApp.newTrigger(SETUP_FUNCTION)
-    .timeBased().everyDays(1).atHour(hour).create();
-  log(`✅ 毎日${hour}時のトリガーを設定しました。`);
+  log(`✅ 自動実行トリガーを再設定しました: 毎日 ${hours.join('時, ')}時台（旧トリガー${removed}件を削除）`);
 }
 
 /**
@@ -114,12 +107,27 @@ function resetAllSettings() {
  */
 function dailySystemRun() {
   log('--- システム実行開始 ---');
+  Health.reset();
+
+  // 各段は独立して動かす。WebClassがコケてもClassroomは試す。
   try {
     processWebClass();
-    processClassroom();
-    processTasksSync();
-    log('--- システム実行完了 ---');
   } catch (e) {
-    log(`🚨 実行中断: ${e.message}`);
+    Health.add(`WebClassの取得に失敗: ${e.message}`);
   }
+
+  try {
+    processClassroom();
+  } catch (e) {
+    Health.add(`Classroomの取得に失敗: ${e.message}`);
+  }
+
+  try {
+    processTasksSync();
+  } catch (e) {
+    Health.add(`Tasksへの同期に失敗: ${e.message}`);
+  }
+
+  log('--- システム実行完了 ---');
+  Health.syncToTasks();
 }
