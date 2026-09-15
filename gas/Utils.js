@@ -101,7 +101,10 @@ function log(message) {
       sheet = ss.insertSheet(SHEET_NAME_LOG);
       sheet.appendRow(['タイムスタンプ', 'メッセージ']);
     }
-    sheet.appendRow([new Date(), message]);
+    // 先頭が = + @ の文字列はスプレッドシートに数式として解釈され #ERROR! になる。
+    // 先頭に ' を付けると強制的に文字列として扱われ、この ' はセルに表示されない。
+    const safe = /^[=+@]/.test(String(message)) ? `'${message}` : message;
+    sheet.appendRow([new Date(), safe]);
   } catch (e) {
     console.error('ログ記録エラー: ' + e.message);
   }

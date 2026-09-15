@@ -9,7 +9,7 @@
  * メニューから手動で実行する。自動実行からは呼ばれない。
  */
 function checkMissingTasks() {
-  log('===== 取りこぼしチェック 開始 =====');
+  log('--- 取りこぼしチェック 開始 ---');
 
   const listId = resolveTaskList();
   if (!listId) {
@@ -87,7 +87,7 @@ function checkMissingTasks() {
   } else {
     log('✅ 取りこぼしはありません。');
   }
-  log('===== 取りこぼしチェック 完了 =====');
+  log('--- 取りこぼしチェック 完了 ---');
 
   return { total: items.length, inTodo: inTodo, excluded: excluded, missing: missing };
 }
