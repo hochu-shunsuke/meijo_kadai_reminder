@@ -127,7 +127,7 @@ function processClassroom() {
 
   let courses;
   try {
-    courses = _listAllClassroomCourses();
+    courses = retryOnTransient('Classroomコース一覧', () => _listAllClassroomCourses());
   } catch (e) {
     log(`🚨 Classroomコース一覧の取得に失敗: ${e.message}`);
     return;
@@ -140,7 +140,7 @@ function processClassroom() {
   // コース単位でtryを切る。1コースの失敗で全滅させない。
   courses.forEach(c => {
     try {
-      const works = _listAllCourseWork(c.id);
+      const works = retryOnTransient(c.name, () => _listAllCourseWork(c.id));
       let dated = 0;
 
       works.forEach(w => {

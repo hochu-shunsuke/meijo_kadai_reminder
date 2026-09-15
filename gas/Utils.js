@@ -168,6 +168,31 @@ const Health = {
 
 
 /**
+ * Google API の一時的な障害（503 "The service is currently unavailable" など）に備えて
+ * 指数バックオフで再試行する。
+ *
+ * 注意: これを使うのは Google のAPIに対してのみ。
+ * WebClass（大学のサーバ）へのリクエストは、無駄に負荷をかけないため再試行しない。
+ */
+function retryOnTransient(label, fn, attempts = 3) {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return fn();
+    } catch (e) {
+      const msg = String((e && e.message) || e);
+      const isTransient = /currently unavailable|internal error|backend error|try again|timed? ?out|rate limit|quota|\b50[0-9]\b/i.test(msg);
+
+      if (!isTransient || i === attempts - 1) throw e;
+
+      const waitMs = Math.pow(2, i) * 1000; // 1秒 → 2秒
+      log(`  ⏳ ${label}: 一時的なエラーのため ${waitMs / 1000}秒後に再試行 (${i + 1}/${attempts - 1})`);
+      Utilities.sleep(waitMs);
+    }
+  }
+}
+
+
+/**
  * 実行時刻の指定文字列を時のリストに変換する。
  * "6,18" / "6, 18" / "6" / 6 のいずれも受け付ける。
  * 不正な値は捨て、重複を除いて昇順にする。
@@ -300,61 +325,67 @@ function setupTasksList(listName) {
  * ★修正: 既存データのTasks ID/Flagを保持したまま更新するように変更
  */
 const SheetUtils = {
-  writeToSheet: function(sheetName, newAssignments) { // newAssignmentsはWebClass/Classroomから取得したデータ
+  writeToSheet: function(sheetName, newAssignments) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     let sheet = ss.getSheetByName(sheetName);
-    
+
     if (!sheet) {
-        sheet = ss.insertSheet(sheetName);
-        log(`シート「${sheetName}」を新規作成しました。`);
+      sheet = ss.insertSheet(sheetName);
+      log(`シート「${sheetName}」を新規作成しました。`);
     }
 
-    // --- 既存のTasks IDとFlagを退避する処理を追加 ---
-    const idMap = new Map();
+    // --- 既存行を課題リンクで引けるようにする ---
+    const existingByLink = new Map();
     const lastRow = sheet.getLastRow();
-    
-    // データが既にある場合、Tasks ID等を退避
+
     if (lastRow > 1) {
-      // 全データを取得 (Linkは5列目, TasksIDは6列目, Flagは7列目 ※0始まり)
       const currentData = sheet.getRange(2, 1, lastRow - 1, HEADER.length).getValues();
-      
       currentData.forEach(row => {
-        const link = row[5]; // 一意のキーとして課題リンクを使用
-        const taskId = row[6];
-        const flag = row[7];
-        
-        // Tasks IDまたはフラグがある場合のみ記録
-        if (link && (taskId || flag)) {
-          idMap.set(link, { id: taskId, flag: flag });
-        }
+        const link = row[5]; // 課題リンクを一意キーとして使う
+        if (link) existingByLink.set(link, row);
       });
     }
 
-    // --- 新しいデータに既存情報をマージ ---
+    // --- 新しいデータに既存のTasks ID / フラグを引き継ぐ ---
+    const newLinks = new Set();
     newAssignments.forEach(row => {
       const link = row[5];
-      if (idMap.has(link)) {
-        const saved = idMap.get(link);
-        row[6] = saved.id;   // Tasks IDを復元
-        row[7] = saved.flag; // 登録済みフラグを復元
+      newLinks.add(link);
+      const prev = existingByLink.get(link);
+      if (prev) {
+        row[6] = prev[6]; // Tasks ID
+        row[7] = prev[7]; // 登録済みフラグ
       }
     });
 
-    // 1. シートをクリア (情報はマージ済みなので安全)
+    // --- 今回取得できなかったが、既にTasksへ登録済み/処理済みの行は残す ---
+    // 取得が一時的に失敗した際に行ごと消えると、Tasks IDを失って
+    // 次回の実行で同じ課題が二重登録されるため。
+    // 不要になった行は _cleanup() が期限経過後に削除する。
+    const preserved = [];
+    existingByLink.forEach((row, link) => {
+      if (newLinks.has(link)) return;
+      if (row[6] || row[7]) preserved.push(row);
+    });
+
+    const rows = newAssignments.concat(preserved);
+
+    // --- シートをクリアして書き戻す ---
     if (lastRow > 1) {
       const lastColumn = sheet.getLastColumn();
       if (lastColumn > 0) {
-          sheet.getRange(2, 1, lastRow - 1, lastColumn).clearContent();
+        sheet.getRange(2, 1, lastRow - 1, lastColumn).clearContent();
       }
     }
 
-    // 2. ヘッダーとデータを書き込み
     sheet.getRange(1, 1, 1, HEADER.length).setValues([HEADER]).setFontWeight('bold');
-    
-    if (newAssignments.length > 0) {
-      sheet.getRange(2, 1, newAssignments.length, newAssignments[0].length).setValues(newAssignments);
+
+    if (rows.length > 0) {
+      sheet.getRange(2, 1, rows.length, HEADER.length).setValues(rows);
     }
     SpreadsheetApp.flush();
-    log(`✅ ${newAssignments.length}件を「${sheetName}」へ更新完了 (重複防止処理済み)`);
+
+    const suffix = preserved.length > 0 ? ` / 登録済みのため保持 ${preserved.length}件` : '';
+    log(`✅ ${newAssignments.length}件を「${sheetName}」へ更新完了${suffix}`);
   }
 };
