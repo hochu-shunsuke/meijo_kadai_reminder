@@ -85,6 +85,13 @@ function processWebClass() {
     Utilities.sleep(500); 
   });
   
+  // コースは見えているのに全コースで項目が0件なら、HTMLの構造が変わって
+  // パースできていない疑いが強い。学期の境目には正当に0件もありうるので、
+  // 誤報でも不具合タスクが1件出るだけに留める。
+  if (courses.length > 0 && rows.length === 0) {
+    Health.add(`WebClassの${courses.length}コースすべてで項目を1件も取得できませんでした。WebClass側のHTML構造が変わった可能性があります。`);
+  }
+
   SheetUtils.writeToSheet(SHEET_NAME_WEBCLASS, rows);
   log('--- WebClass課題取得完了 ---');
 }
@@ -142,6 +149,7 @@ function processClassroom() {
 
   const rows = [];
   let failed = 0;
+  let totalWorks = 0; // 期限の有無を問わない、取得できた課題の総数
 
   // コース単位でtryを切る。1コースの失敗で全滅させない。
   courses.forEach(c => {
@@ -162,6 +170,7 @@ function processClassroom() {
         dated++;
       });
 
+      totalWorks += works.length;
       log(`  ✅ ${c.name}: 課題${works.length}件 / 期限付き${dated}件`);
     } catch (e) {
       failed++;
@@ -171,6 +180,8 @@ function processClassroom() {
 
   if (courses.length === 0) {
     Health.add('ClassroomのACTIVEなコースが0件でした。学期の切り替わりでアーカイブされた可能性があります。');
+  } else if (failed === 0 && totalWorks === 0) {
+    Health.add(`Classroomの${courses.length}コースすべてで課題が0件でした。取得自体は成功しているため、コースがアーカイブされたか、課題が未公開の可能性があります。`);
   } else if (failed === courses.length) {
     Health.add('Classroomの全コースで課題取得に失敗しました。OAuthスコープ不足が濃厚です (classroom.coursework.me.readonly)。');
   }
@@ -186,35 +197,68 @@ function processClassroom() {
 }
 
 /**
+ * 使用するTasksリストのIDを返す。無効になっていれば復旧を試みる。
+ *
+ * リストを手で削除・リネームされると、保存済みのIDは無効になる。
+ * 以前は「IDを消して終了」していたため、メニューから手動で再設定するまで
+ * 課題が一件もTasksに入らない状態が続き、しかも不具合タスクの置き場所も
+ * 失われるため何の通知も出せなかった。
+ * リスト名は設定に残っているので、名前から探し直す（無ければ作る）。
+ *
+ * @returns {string|null} 使用可能なリストID。復旧できなければ null。
+ */
+function resolveTaskList() {
+  const savedId = Settings.getTaskListId();
+
+  if (savedId) {
+    try {
+      Tasks.Tasklists.get(savedId);
+      return savedId; // 正常
+    } catch (e) {
+      const msg = String(e.message || e);
+      if (!/not found/i.test(msg)) {
+        // 通信エラー等。リストが消えたとは限らないので設定は触らない。
+        Health.add(`Tasks APIエラーのため同期できませんでした: ${msg}`);
+        return null;
+      }
+      log(`⚠️ TasksリストID「${savedId}」が見つかりません。リスト名から復旧を試みます。`);
+      Settings.deleteTaskListId();
+    }
+  }
+
+  const listName = Settings.getSetting('taskListName');
+  if (!listName) {
+    Health.add('Tasksリストが未設定のため、課題を登録できませんでした。メニューの「2. Tasks・自動実行設定を完了」から設定してください。');
+    return null;
+  }
+
+  try {
+    const recoveredId = setupTasksList(listName); // 同名リストを探し、無ければ作成する
+    Settings.setTaskListId(recoveredId);
+    Health.add(`Tasksリスト「${listName}」が見つからなかったため、作成し直して復旧しました。以前のリストにあったタスクは引き継がれていません。`);
+    return recoveredId;
+  } catch (e) {
+    Health.add(`Tasksリスト「${listName}」の復旧に失敗しました: ${e.message}`);
+    return null;
+  }
+}
+
+
+/**
  * スプレッドシートとTasksの同期処理
  */
 function processTasksSync() {
-  const listId = Settings.getTaskListId();
-  if (!listId) {
-    log('⚠️ TasksリストIDが未設定のため、同期・登録処理をスキップしました。');
-    return;
-  }
-  
   log('--- Tasks同期処理開始 ---');
 
-  // TasksリストIDの有効性チェック
-  try {
-    Tasks.Tasklists.get(listId); 
-  } catch (e) {
-    if (e.message.includes('Not Found') || e.message.includes('not found')) {
-      log(`🚨 TasksリストID「${listId}」が見つかりませんでした。リストが削除された可能性があります。`);
-      Settings.deleteTaskListId(); 
-      log('✅ 無効なTasksリストIDを削除しました。Tasks連携を再開するには、メニューの「2. Tasks・自動実行設定を完了」から再設定してください。');
-      return; 
-    }
-    log(`🚨 Tasks APIエラーにより同期中断: ${e.message}`);
-    throw new Error(`Tasks APIエラーにより同期中断: ${e.message}`);
-  }
+  const listId = resolveTaskList();
+  if (!listId) return; // 理由は resolveTaskList 側で Health に記録済み
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   
   const sheetDataMap = new Map();
   const allRows = [];
+  const skippedNoDate = [];     // 期限が無い/読めないためTasksに入らなかった課題
+  const unreadableDates = [];   // そのうち、期限の値はあるのに解釈できなかったもの
 
   // 各シートを読み込み、2シートを1つの配列に統合する。
   // 書き戻す先が分かるように、シート名と元の行番号を後ろに付けておく。
@@ -276,8 +320,14 @@ function processTasksSync() {
       let dueObj = parseAssignmentDate(due); 
       
       if (!dueObj) {
-         originalRow[COL.FLAG] = FLAG.SKIPPED_NODATE; sheetContext.updated = true;
-         return;
+        // なぜToDoに入らなかったのかを必ず追えるようにする。
+        // 期限欄が空なら資料などの対象外項目、値があるのに読めないならパーサーの問題。
+        const raw = String(due == null ? '' : due).trim();
+        skippedNoDate.push({ title: title, raw: raw });
+        if (raw !== '') unreadableDates.push(`「${title}」の期限「${raw}」を解釈できませんでした`);
+
+        originalRow[COL.FLAG] = FLAG.SKIPPED_NODATE; sheetContext.updated = true;
+        return;
       }
 
       // 既に期限が過ぎているかチェック (1日余裕)
@@ -311,6 +361,20 @@ function processTasksSync() {
       }
     }
   });
+
+  // --- ToDoに入らなかった課題の内訳を残す ---
+  if (skippedNoDate.length > 0) {
+    log(`ℹ️ 期限が無いためTasks登録の対象外: ${skippedNoDate.length}件`);
+    skippedNoDate.forEach(x => {
+      log(`    - ${x.title}${x.raw ? ` (期限欄の値: ${JSON.stringify(x.raw)})` : ' (期限欄が空)'}`);
+    });
+  }
+
+  // 期限欄に値があるのに解釈できないのは、日付フォーマットの変更を疑うべき異常。
+  // 全部が資料で期限が空、というケースとは区別して警告する。
+  if (unreadableDates.length > 0) {
+    Health.add(`期限の日付を解釈できない課題が${unreadableDates.length}件あります（ToDoに登録されていません）。WebClassの日付表記が変わった可能性があります。例: ${unreadableDates[0]}`);
+  }
 
   // 6. 更新されたデータをソートし、元のシートに書き戻す
   sheetDataMap.forEach((context, name) => {

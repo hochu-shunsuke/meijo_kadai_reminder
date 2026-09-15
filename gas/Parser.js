@@ -24,8 +24,15 @@ const WebClassParser = {
     items.forEach(item => {
       const tMatch = item.match(/<h4\s+[^>]*?class=\"cm-contentsList_contentName\"[^>]*?>([\s\S]*?)<\/h4>/);
       if (!tMatch) return;
-      const content = tMatch[1].replace(/<div class=\"cl-contentsList_new\">[\s\S]*?<\/div>/g, '').trim();
-      const title = content.replace(/<[^>]+>/g, '').trim();
+      // 新着バッジ。タグ名・クラスの並び・属性の増減に影響されないよう、クラス名の部分一致で除去する。
+      const hadNewBadge = /cl-contentsList_new/.test(tMatch[1]);
+      const content = tMatch[1]
+        .replace(/<(\w+)[^>]*class=[\"'][^\"']*cl-contentsList_new[^\"']*[\"'][^>]*>[\s\S]*?<\/\1>/gi, '')
+        .trim();
+
+      // 除去しきれずバッジの文言だけ残る場合があるため、バッジがあった項目に限り先頭の New を落とす。
+      let title = content.replace(/<[^>]+>/g, '').trim();
+      if (hadNewBadge) title = title.replace(/^New\s*/i, '').trim();
 
       const uMatch = content.match(/<a href=\"([^\"]+)\">/);
       let link = "";
