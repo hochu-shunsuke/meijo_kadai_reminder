@@ -160,10 +160,8 @@ function processClassroom() {
       works.forEach(w => {
         if (!w.dueDate) return;
 
-        const d = w.dueDate;
-        const t = w.dueTime || {};
-        // dueDate/dueTime はAPI仕様上UTC。UTCとして組み立ててからスクリプトのTZで整形する。
-        const dt = new Date(Date.UTC(d.year, d.month - 1, d.day, t.hours || 0, t.minutes || 0));
+        const dt = fromClassroomDue(w.dueDate, w.dueTime);
+        if (!dt) return;
         const dueStr = Utilities.formatDate(dt, Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm');
 
         rows.push(['Classroom', c.name, w.title, '', dueStr, w.alternateLink, '', '']);

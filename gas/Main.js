@@ -13,6 +13,8 @@ function onOpen() {
     .addSeparator()
     .addItem('3. 今すぐ実行（テスト）', SETUP_FUNCTION)
     .addSeparator()
+    .addItem('課題の取りこぼしをチェック', 'checkMissingTasks')
+    .addSeparator()
     .addItem('4. 設定をすべてリセット', 'resetAllSettings')
     .addToUi();
 }

@@ -243,6 +243,19 @@ function parseTriggerHours(value) {
 
 
 /**
+ * Classroom APIの dueDate / dueTime を Date に変換する。
+ * どちらも仕様上UTCなので、UTCとして組み立てる。
+ * （ローカル時刻として組み立てると、日本時間では9時間ずれる）
+ */
+function fromClassroomDue(dueDate, dueTime) {
+  if (!dueDate) return null;
+  const t = dueTime || {};
+  const d = new Date(Date.UTC(dueDate.year, dueDate.month - 1, dueDate.day, t.hours || 0, t.minutes || 0));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+
+/**
  * 日付文字列をパースしてDateオブジェクトを返すヘルパー関数。
  */
 function parseAssignmentDate(dateStr) {
