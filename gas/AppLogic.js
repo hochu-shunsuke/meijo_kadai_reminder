@@ -63,6 +63,7 @@ function processWebClass() {
   }
 
   const rows = [];
+  const failedCourses = [];
   courses.forEach(c => {
     let cName = c.name.replace(/^\s*\d+\s*/, '').replace(/\s*\(.*\)\s*$/, '').trim();
     try {
@@ -74,12 +75,19 @@ function processWebClass() {
         rows.push(['WebClass', cName, a.title, a.start, a.end, a.shareLink, '', '']);
       });
     } catch (e) {
+      failedCourses.push(cName);
       Health.add(`WebClass「${cName}」の課題取得に失敗: ${e.message}`);
     }
     Utilities.sleep(500); 
   });
-  
-  SheetUtils.writeToSheet(SHEET_NAME_WEBCLASS, rows);
+
+  // Classroomと同じ理由で、失敗したコースの既存行は消さずに引き継ぐ。
+  const carried = SheetUtils.getRowsForCourses(SHEET_NAME_WEBCLASS, failedCourses);
+  if (carried.length > 0) {
+    log(`⏸️ 取得に失敗した${failedCourses.length}コース分の既存${carried.length}件を保持します。`);
+  }
+
+  SheetUtils.writeToSheet(SHEET_NAME_WEBCLASS, rows.concat(carried));
   log('--- WebClass課題取得完了 ---');
 }
 
@@ -90,11 +98,11 @@ function _listAllClassroomCourses() {
   const out = [];
   let pageToken = null;
   do {
-    const res = Classroom.Courses.list({
+    const res = withRetry('classroom.courses.list', () => Classroom.Courses.list({
       courseStates: ['ACTIVE'],
       pageSize: 100,
       pageToken: pageToken || undefined
-    });
+    }));
     if (res.courses) out.push(...res.courses);
     pageToken = res.nextPageToken;
   } while (pageToken);
@@ -104,15 +112,16 @@ function _listAllClassroomCourses() {
 /**
  * 1コース分の課題をページネーション込みで全件取得
  */
-function _listAllCourseWork(courseId) {
+function _listAllCourseWork(courseId, courseName) {
   const out = [];
   let pageToken = null;
   do {
-    const res = Classroom.Courses.CourseWork.list(courseId, {
+    const label = `classroom.courses.courseWork.list (${courseName || courseId})`;
+    const res = withRetry(label, () => Classroom.Courses.CourseWork.list(courseId, {
       courseWorkStates: ['PUBLISHED'],
       pageSize: 100,
       pageToken: pageToken || undefined
-    });
+    }));
     if (res.courseWork) out.push(...res.courseWork);
     pageToken = res.nextPageToken;
   } while (pageToken);
@@ -135,12 +144,15 @@ function processClassroom() {
   log(`Classroomコースを${courses.length}件検出`);
 
   const rows = [];
-  let failed = 0;
+  const failedCourses = [];
 
   // コース単位でtryを切る。1コースの失敗で全滅させない。
-  courses.forEach(c => {
+  courses.forEach((c, i) => {
+    // 連続で叩くとレート制限に触れやすいので、コース間を少し空ける。
+    if (i > 0) Utilities.sleep(CLASSROOM_COURSE_INTERVAL_MS);
+
     try {
-      const works = _listAllCourseWork(c.id);
+      const works = _listAllCourseWork(c.id, c.name);
       let dated = 0;
 
       works.forEach(w => {
@@ -158,10 +170,12 @@ function processClassroom() {
 
       log(`  ✅ ${c.name}: 課題${works.length}件 / 期限付き${dated}件`);
     } catch (e) {
-      failed++;
+      failedCourses.push(c.name);
       Health.add(`Classroom「${c.name}」の課題取得に失敗: ${e.message}`);
     }
   });
+
+  const failed = failedCourses.length;
 
   if (courses.length === 0) {
     Health.add('ClassroomのACTIVEなコースが0件でした。学期の切り替わりでアーカイブされた可能性があります。');
@@ -169,13 +183,22 @@ function processClassroom() {
     Health.add('Classroomの全コースで課題取得に失敗しました。OAuthスコープ不足が濃厚です (classroom.coursework.me.readonly)。');
   }
 
+  // 失敗したコースの既存行はシートから消さずに引き継ぐ。
+  // 消すとTasks IDごと失われ、次回復旧したときに同じ課題が二重登録される。
+  const carried = SheetUtils.getRowsForCourses(SHEET_NAME_CLASSROOM, failedCourses);
+  if (carried.length > 0) {
+    log(`⏸️ 取得に失敗した${failed}コース分の既存${carried.length}件を保持します。`);
+  }
+
+  const finalRows = rows.concat(carried);
+
   // 全滅時に既存シートを空で上書きして消し飛ばさない
-  if (rows.length === 0 && (failed > 0 || courses.length === 0)) {
+  if (finalRows.length === 0 && (failed > 0 || courses.length === 0)) {
     log('⚠️ 取得0件かつ失敗ありのため、シート上書きをスキップしました（既存データを保持）。');
     return;
   }
 
-  SheetUtils.writeToSheet(SHEET_NAME_CLASSROOM, rows);
+  SheetUtils.writeToSheet(SHEET_NAME_CLASSROOM, finalRows);
   log('--- Classroom課題取得完了 ---');
 }
 

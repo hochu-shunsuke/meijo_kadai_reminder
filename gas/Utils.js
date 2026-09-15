@@ -77,6 +77,45 @@ function log(message) {
 }
 
 /**
+ * Google APIの一時障害だけを指数バックオフで再試行する。
+ *
+ * Advanced Service（Classroom/Tasks）は自動リトライしないので、
+ * 503が1回返っただけでそのコースの課題が丸ごと落ちる。
+ * 恒久的なエラー（権限不足、Not Found）まで粘ると実行時間を無駄に食うので、
+ * 再試行するのは一時障害に限る。
+ *
+ * @param {string} label ログ用の呼び出し名
+ * @param {function()} fn 実行する処理
+ * @return {*} fnの戻り値
+ */
+function withRetry(label, fn) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return fn();
+    } catch (e) {
+      if (attempt >= RETRY_MAX_ATTEMPTS || !isTransientApiError(e)) throw e;
+
+      const waitMs = RETRY_BASE_WAIT_MS * Math.pow(2, attempt - 1);
+      log(`⏳ ${label} が一時エラー（${attempt}/${RETRY_MAX_ATTEMPTS}回目）。${waitMs}ms後に再試行: ${e.message}`);
+      Utilities.sleep(waitMs);
+    }
+  }
+}
+
+/**
+ * 時間をおけば直る類のエラーかどうかを判定する。
+ * 5xx・429のみtrue。権限不足やNot Foundは何度やっても同じなのでfalse。
+ */
+function isTransientApiError(e) {
+  const code = e && e.details && e.details.code;
+  if (code === 429 || (code >= 500 && code <= 599)) return true;
+
+  const msg = String((e && e.message) || '');
+  return TRANSIENT_ERROR_PATTERNS.some(pattern => msg.indexOf(pattern) !== -1);
+}
+
+
+/**
  * 実行の健全性を集め、異常があればTasksに「不具合タスク」を1件だけ置く。
  *
  * 「壊れているのに黙って動き続ける」のを防ぐのが目的。
@@ -300,6 +339,25 @@ function setupTasksList(listName) {
  * ★修正: 既存データのTasks ID/Flagを保持したまま更新するように変更
  */
 const SheetUtils = {
+  /**
+   * 指定した授業名の既存行を、シートからそのまま取り出す。
+   *
+   * 取得に失敗したコースの行を消さずに書き戻すために使う。
+   * 消してしまうとTasks IDごと失われ、次回復旧したときに
+   * 同じ課題がGoogle Tasksへ二重登録される。
+   */
+  getRowsForCourses: function(sheetName, courseNames) {
+    if (!courseNames || courseNames.length === 0) return [];
+
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+    if (!sheet || sheet.getLastRow() <= 1) return [];
+
+    const targets = new Set(courseNames);
+    return sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADER.length)
+      .getValues()
+      .filter(row => targets.has(row[1]));
+  },
+
   writeToSheet: function(sheetName, newAssignments) { // newAssignmentsはWebClass/Classroomから取得したデータ
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     let sheet = ss.getSheetByName(sheetName);
