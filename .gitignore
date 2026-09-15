@@ -1,1 +1,4 @@
 .DS_Store
+
+# claspの設定。スクリプトIDを含むので、公開リポジトリには入れない。
+.clasp.json
