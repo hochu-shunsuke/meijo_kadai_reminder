@@ -255,8 +255,8 @@ function processTasksSync() {
   
   const sheetDataMap = new Map();
   const allRows = [];
-  const skippedNoDate = [];     // 期限が無い/読めないためTasksに入らなかった課題
-  const unreadableDates = [];   // そのうち、期限の値はあるのに解釈できなかったもの
+  let skippedNoDate = 0;        // 期限が無い/読めないためTasksに入らなかった件数
+  const unreadableDates = [];   // そのうち、期限の値はあるのに解釈できなかったもの（異常）
 
   // 各シートを読み込み、2シートを1つの配列に統合する。
   // 書き戻す先が分かるように、シート名と元の行番号を後ろに付けておく。
@@ -321,7 +321,7 @@ function processTasksSync() {
         // なぜToDoに入らなかったのかを必ず追えるようにする。
         // 期限欄が空なら資料などの対象外項目、値があるのに読めないならパーサーの問題。
         const raw = String(due == null ? '' : due).trim();
-        skippedNoDate.push({ title: title, raw: raw });
+        skippedNoDate++;
         if (raw !== '') unreadableDates.push(`「${title}」の期限「${raw}」を解釈できませんでした`);
 
         originalRow[COL.FLAG] = FLAG.SKIPPED_NODATE; sheetContext.updated = true;
@@ -360,13 +360,9 @@ function processTasksSync() {
     }
   });
 
-  // --- ToDoに入らなかった課題の内訳を残す ---
-  if (skippedNoDate.length > 0) {
-    log(`ℹ️ 期限が無いためTasks登録の対象外: ${skippedNoDate.length}件`);
-    skippedNoDate.forEach(x => {
-      log(`    - ${x.title}${x.raw ? ` (期限欄の値: ${JSON.stringify(x.raw)})` : ' (期限欄が空)'}`);
-    });
-  }
+  // 期限が無い項目（資料など）は正常なので件数だけ。内訳が要るときは
+  // メニューの「課題の取りこぼしをチェック」で見る。
+  if (skippedNoDate > 0) log(`期限が無いためTasks登録の対象外: ${skippedNoDate}件`);
 
   // 期限欄に値があるのに解釈できないのは、日付フォーマットの変更を疑うべき異常。
   // 全部が資料で期限が空、というケースとは区別して警告する。
