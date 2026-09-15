@@ -30,7 +30,6 @@ function clearAssignmentSheets() {
         log(`[設定] シート「${name}」の課題データをクリアしました。`);
     }
   });
-  
 }
 
 
@@ -50,7 +49,8 @@ function processWebClass() {
   try {
     dashUrl = client.login(u, p);
   } catch(e) {
-    throw new Error('WebClassへのログインに失敗しました。認証情報を確認してください。');
+    // 元の原因（認証失敗か、HTML構造の変更によるリダイレクト追跡失敗か）を残す
+    throw new Error(`WebClassへのログインに失敗しました: ${e.message}`);
   }
 
   const dashHtml = client.fetchWithSession(dashUrl);
@@ -92,7 +92,6 @@ function processWebClass() {
   }
 
   SheetUtils.writeToSheet(SHEET_NAME_WEBCLASS, rows);
-  
 }
 
 /**
@@ -139,7 +138,7 @@ function processClassroom() {
   try {
     courses = retryOnTransient('Classroomコース一覧', () => _listAllClassroomCourses());
   } catch (e) {
-    log(`🚨 Classroomコース一覧の取得に失敗: ${e.message}`);
+    Health.add(`Classroomのコース一覧を取得できませんでした: ${e.message}`);
     return;
   }
   const rows = [];
@@ -190,7 +189,6 @@ function processClassroom() {
   }
 
   SheetUtils.writeToSheet(SHEET_NAME_CLASSROOM, rows);
-  
 }
 
 /**
@@ -276,8 +274,8 @@ function processTasksSync() {
   
   // 4. 統合した全課題を、締切の遅い順にソートする (Tasksへの登録順を決定)
   allRows.sort((a, b) => {
-    const dateA = parseAssignmentDate(a[4]); 
-    const dateB = parseAssignmentDate(b[4]);
+    const dateA = parseAssignmentDate(a[COL.END]); 
+    const dateB = parseAssignmentDate(b[COL.END]);
 
     const timeA = dateA ? dateA.getTime() : Infinity;
     const timeB = dateB ? dateB.getTime() : Infinity;
@@ -371,8 +369,8 @@ function processTasksSync() {
     if (context.updated) {
       // 課題を期限の早い順にソート（シート表示用）
       context.rows.sort((a, b) => {
-        const dateA = parseAssignmentDate(a[4]);
-        const dateB = parseAssignmentDate(b[4]);
+        const dateA = parseAssignmentDate(a[COL.END]);
+        const dateB = parseAssignmentDate(b[COL.END]);
 
         const timeA = dateA ? dateA.getTime() : Infinity;
         const timeB = dateB ? dateB.getTime() : Infinity;
@@ -381,13 +379,12 @@ function processTasksSync() {
       });
       
       // シートに書き戻す
-      context.sheet.getRange(2, 1, context.rows.length, context.rows[0].length).setValues(context.rows);
+      context.sheet.getRange(2, 1, context.rows.length, HEADER.length).setValues(context.rows);
       SpreadsheetApp.flush();
     }
   });
   
   _cleanup(ss); 
-  
 }
 
 /**
