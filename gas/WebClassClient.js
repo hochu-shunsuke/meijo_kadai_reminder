@@ -9,7 +9,6 @@ class WebClassClient {
   }
 
   login(userid, password) {
-    log('--- WebClassログイン開始 ---');
     this.cookies = {};
 
     // 1. SSO
@@ -40,7 +39,7 @@ class WebClassClient {
     const wcBase = WEBCLASS_BASE_URL.replace(/\/$/, '');
 
     const result = this._followRedirects(loginUrl, ssoBase, wcBase);
-    log(`✅ WebClassセッション確立: ${result.finalUrl}`);
+    log('[WebClass] ログイン成功');
     return result.finalUrl;
   }
 

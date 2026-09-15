@@ -82,7 +82,7 @@ function trimLogSheet(maxRows) {
 
     const removeCount = dataRows - limit;
     sheet.deleteRows(2, removeCount); // 2行目（最も古い行）から削除
-    log(`🧹 ログの古い${removeCount}行を削除しました（直近${limit}行を保持）。`);
+    log(`🧹 古いログ${removeCount}行を削除 (直近${limit}行を保持)`);
   } catch (e) {
     console.error('ログ整理エラー: ' + e.message);
   }
@@ -154,13 +154,13 @@ const Health = {
       if (savedId) {
         try {
           Tasks.Tasks.remove(listId, savedId);
-          log('✅ 復旧を確認したので、不具合タスクを削除しました。');
+          log('✅ 復旧を確認。不具合タスクを削除しました。');
         } catch (e) {
           // 既にユーザーが消している場合。何もしなくてよい。
         }
         Settings.deleteSetting('healthTaskId');
       }
-      log('✅ 健全性チェック: 異常なし');
+      log('✅ 異常なし');
       return;
     }
 
@@ -182,7 +182,7 @@ const Health = {
     if (savedId) {
       try {
         Tasks.Tasks.patch(task, listId, savedId);
-        log(`⚠️ 不具合タスクを更新しました (${this.problems.length}件)`);
+        log(`⚠️ 不具合タスクを更新 (${this.problems.length}件)`);
         return;
       } catch (e) {
         // ユーザーが消していた → 作り直す
@@ -193,7 +193,7 @@ const Health = {
     try {
       const created = Tasks.Tasks.insert(task, listId);
       Settings.setSetting('healthTaskId', created.id);
-      log(`⚠️ 不具合タスクをTasksに追加しました (${this.problems.length}件)`);
+      log(`⚠️ 不具合タスクをTasksに追加 (${this.problems.length}件)`);
     } catch (e) {
       log(`🚨 不具合タスクの作成に失敗: ${e.message}`);
     }
@@ -219,7 +219,7 @@ function retryOnTransient(label, fn, attempts = 3) {
       if (!isTransient || i === attempts - 1) throw e;
 
       const waitMs = Math.pow(2, i) * 1000; // 1秒 → 2秒
-      log(`  ⏳ ${label}: 一時的なエラーのため ${waitMs / 1000}秒後に再試行 (${i + 1}/${attempts - 1})`);
+      log(`  ・${label}: 一時的なエラー。${waitMs / 1000}秒後に再試行 (${i + 1}/${attempts - 1})`);
       Utilities.sleep(waitMs);
     }
   }
@@ -329,7 +329,7 @@ const Settings = {
           ScriptApp.deleteTrigger(t);
       }
     }
-    log('すべての設定と自動実行トリガーを削除しました。');
+    log('[設定] すべての設定と自動実行トリガーを削除しました。');
   }
 };
 
@@ -348,7 +348,7 @@ function setupTasksList(listName) {
     for (const list of lists) {
       if (list.title === listName) {
         targetId = list.id;
-        log(`既存のTasksリスト「${listName}」を再発見しました。`);
+        log(`[設定] 既存のTasksリスト「${listName}」を使用します。`);
         break;
       }
     }
@@ -358,7 +358,7 @@ function setupTasksList(listName) {
   if (!targetId) {
     const newList = Tasks.Tasklists.insert({ title: listName });
     targetId = newList.id;
-    log(`Tasksリスト「${listName}」を新規作成しました。`);
+    log(`[設定] Tasksリスト「${listName}」を作成しました。`);
   }
 
   return targetId; 
@@ -378,7 +378,7 @@ const SheetUtils = {
 
     if (!sheet) {
       sheet = ss.insertSheet(sheetName);
-      log(`シート「${sheetName}」を新規作成しました。`);
+      log(`[設定] シート「${sheetName}」を作成しました。`);
     }
 
     // --- 既存行を課題リンクで引けるようにする ---
@@ -433,6 +433,6 @@ const SheetUtils = {
     SpreadsheetApp.flush();
 
     const suffix = preserved.length > 0 ? ` / 登録済みのため保持 ${preserved.length}件` : '';
-    log(`✅ ${newAssignments.length}件を「${sheetName}」へ更新完了${suffix}`);
+    log(`  → ${newAssignments.length}件を「${sheetName}」へ書き込み${suffix}`);
   }
 };

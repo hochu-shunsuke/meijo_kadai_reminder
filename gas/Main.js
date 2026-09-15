@@ -80,7 +80,7 @@ function setupDailyTrigger(hourSpec) {
     ScriptApp.newTrigger(SETUP_FUNCTION).timeBased().everyDays(1).atHour(h).create();
   }
 
-  log(`✅ 自動実行トリガーを再設定しました: 毎日 ${hours.join('時, ')}時台（旧トリガー${removed}件を削除）`);
+  log(`[設定] 自動実行を毎日 ${hours.join('時・')}時台に設定 (旧トリガー${removed}件を削除)`);
 }
 
 /**
@@ -108,8 +108,25 @@ function resetAllSettings() {
  * 日次実行メイン関数
  */
 function dailySystemRun() {
+  // 同じシートを読み書きするため、実行が重なると
+  // Tasks IDを失ったり二重登録が起きる。重なったら今回は諦める
+  // （トリガーは1日複数回あるので、次の機会に処理される）。
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(0)) {
+    log('⚠️ 別の実行が進行中のため、今回はスキップしました。');
+    return;
+  }
+
+  try {
+    _dailySystemRun();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _dailySystemRun() {
   const startedAt = new Date();
-  log(`--- システム実行開始 (${formatStamp(startedAt)}) ---`);
+  log(`--- 実行開始 (${formatStamp(startedAt)}) ---`);
   Health.reset();
 
   // 各段は独立して動かす。WebClassがコケてもClassroomは試す。
@@ -133,7 +150,7 @@ function dailySystemRun() {
 
   const finishedAt = new Date();
   const elapsedSec = Math.round((finishedAt - startedAt) / 1000);
-  log(`--- システム実行完了 (${formatStamp(finishedAt)} / 所要 ${elapsedSec}秒) ---`);
+  log(`--- 実行完了 (${formatStamp(finishedAt)} / ${elapsedSec}秒) ---`);
 
   Health.syncToTasks();
   trimLogSheet();

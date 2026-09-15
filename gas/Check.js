@@ -9,6 +9,22 @@
  * メニューから手動で実行する。自動実行からは呼ばれない。
  */
 function checkMissingTasks() {
+  // 自動実行と重なるとログが混ざり、結果も途中の状態を見てしまう。
+  // こちらは手動なので、少し待ってから諦める。
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    log('⚠️ 自動実行が進行中です。終わってからもう一度実行してください。');
+    return;
+  }
+
+  try {
+    _checkMissingTasks();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _checkMissingTasks() {
   log('--- 取りこぼしチェック 開始 ---');
 
   const listId = resolveTaskList();
@@ -33,7 +49,7 @@ function checkMissingTasks() {
     });
     pageToken = res.nextPageToken;
   } while (pageToken);
-  log(`ToDoに登録されている課題: ${registeredLinks.size}件`);
+  log(`[チェック] ToDoに登録済みの課題: ${registeredLinks.size}件`);
 
   // --- 2. 両方のソースから全項目を集める（期限の有無を問わず） ---
   const items = _collectAllItems();
@@ -48,12 +64,12 @@ function checkMissingTasks() {
   items.forEach(it => {
     if (it.course !== currentCourse) {
       currentCourse = it.course;
-      log(`■ ${it.course} (${it.source})`);
+      log(`[${it.source}] ${it.course}`);
     }
 
     if (registeredLinks.has(it.link)) {
       inTodo++;
-      log(`    ✅ ${it.title}`);
+      log(`  ・${it.title} — ToDoにあり`);
       return;
     }
 
@@ -74,16 +90,16 @@ function checkMissingTasks() {
     if (reason.indexOf('★') === 0) missing.push(`${it.course} / ${it.title} — ${reason}`);
     else excluded++;
 
-    log(`    ${reason.indexOf('★') === 0 ? '🚨' : '⏭'} ${it.title} — ${reason}`);
+    log(`  ・${it.title} — ${reason}`);
   });
 
   // --- 4. まとめ ---
-  log('----------');
-  log(`全項目 ${items.length}件 / ToDoにあり ${inTodo}件 / 対象外 ${excluded}件 / ★要確認 ${missing.length}件`);
+
+  log(`[チェック] 全${items.length}件 / ToDoにあり${inTodo} / 対象外${excluded} / 要確認${missing.length}`);
 
   if (missing.length > 0) {
     log('🚨 ToDoに入るべきなのに入っていない項目:');
-    missing.forEach(m => log(`    ${m}`));
+    missing.forEach(m => log(`  ・${m}`));
   } else {
     log('✅ 取りこぼしはありません。');
   }

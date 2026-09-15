@@ -14,7 +14,6 @@
  * (ヘッダー行とTasks ID/フラグだけでなく、課題全体をクリアし、次回全て再取得させる)
  */
 function clearAssignmentSheets() {
-  log('--- 課題シートの全データクリア開始 (Tasksリスト再設定のため) ---');
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   
   [SHEET_NAME_WEBCLASS, SHEET_NAME_CLASSROOM].forEach(name => {
@@ -28,10 +27,10 @@ function clearAssignmentSheets() {
     // データが存在する場合のみクリア実行
     if (lastRow > 1 && lastCol > 0) {
         sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();
-        log(`✅ シート「${name}」の全課題データをクリアしました。`);
+        log(`[設定] シート「${name}」の課題データをクリアしました。`);
     }
   });
-  log('--- 課題シートの全データクリア完了 ---');
+  
 }
 
 
@@ -39,7 +38,6 @@ function clearAssignmentSheets() {
  * WebClassから課題を取得し、シートに書き込む
  */
 function processWebClass() {
-  log('--- WebClass課題取得開始 ---');
   const u = Settings.getSetting('userid');
   const p = Settings.getSetting('password');
   
@@ -52,7 +50,6 @@ function processWebClass() {
   try {
     dashUrl = client.login(u, p);
   } catch(e) {
-    log(`🚨 ログイン失敗: ${e.message}`);
     throw new Error('WebClassへのログインに失敗しました。認証情報を確認してください。');
   }
 
@@ -61,9 +58,8 @@ function processWebClass() {
   if (courses.length === 0) {
     Health.add('WebClassのコースを1件も検出できませんでした。WebClass側のHTML構造が変わった可能性があります。');
   }
-  log(`WebClassコースを${courses.length}件検出`);
-
   const rows = [];
+  const detail = [];   // 項目があったコースだけを記録する（0件の行を並べても情報がない）
   courses.forEach(c => {
     const cName = c.name.replace(/^\s*\d+\s*/, '').replace(/\s*\(.*\)\s*$/, '').trim();
     try {
@@ -78,13 +74,16 @@ function processWebClass() {
       });
 
       // 「項目」には課題だけでなく資料なども含まれる。期限が読めたものだけがTasksの対象になる。
-      log(`  ✅ ${cName}: 項目${items.length}件 / 期限付き${dated}件`);
+      if (items.length > 0) detail.push(`  ・${cName}: ${items.length}件 (期限付き${dated})`);
     } catch (e) {
       Health.add(`WebClass「${cName}」の課題取得に失敗: ${e.message}`);
     }
     Utilities.sleep(500); 
   });
   
+  log(`[WebClass] ${courses.length}コース中${detail.length}コースに項目あり`);
+  detail.forEach(d => log(d));
+
   // コースは見えているのに全コースで項目が0件なら、HTMLの構造が変わって
   // パースできていない疑いが強い。学期の境目には正当に0件もありうるので、
   // 誤報でも不具合タスクが1件出るだけに留める。
@@ -93,7 +92,7 @@ function processWebClass() {
   }
 
   SheetUtils.writeToSheet(SHEET_NAME_WEBCLASS, rows);
-  log('--- WebClass課題取得完了 ---');
+  
 }
 
 /**
@@ -136,8 +135,6 @@ function _listAllCourseWork(courseId) {
  * Google Classroomから課題を取得し、シートに書き込む
  */
 function processClassroom() {
-  log('--- Classroom課題取得開始 ---');
-
   let courses;
   try {
     courses = retryOnTransient('Classroomコース一覧', () => _listAllClassroomCourses());
@@ -145,9 +142,8 @@ function processClassroom() {
     log(`🚨 Classroomコース一覧の取得に失敗: ${e.message}`);
     return;
   }
-  log(`Classroomコースを${courses.length}件検出`);
-
   const rows = [];
+  const detail = [];
   let failed = 0;
   let totalWorks = 0; // 期限の有無を問わない、取得できた課題の総数
 
@@ -169,12 +165,15 @@ function processClassroom() {
       });
 
       totalWorks += works.length;
-      log(`  ✅ ${c.name}: 課題${works.length}件 / 期限付き${dated}件`);
+      if (works.length > 0) detail.push(`  ・${c.name}: ${works.length}件 (期限付き${dated})`);
     } catch (e) {
       failed++;
       Health.add(`Classroom「${c.name}」の課題取得に失敗: ${e.message}`);
     }
   });
+
+  log(`[Classroom] ${courses.length}コース中${detail.length}コースに課題あり`);
+  detail.forEach(d => log(d));
 
   if (courses.length === 0) {
     Health.add('ClassroomのACTIVEなコースが0件でした。学期の切り替わりでアーカイブされた可能性があります。');
@@ -191,7 +190,7 @@ function processClassroom() {
   }
 
   SheetUtils.writeToSheet(SHEET_NAME_CLASSROOM, rows);
-  log('--- Classroom課題取得完了 ---');
+  
 }
 
 /**
@@ -219,7 +218,7 @@ function resolveTaskList() {
         Health.add(`Tasks APIエラーのため同期できませんでした: ${msg}`);
         return null;
       }
-      log(`⚠️ TasksリストID「${savedId}」が見つかりません。リスト名から復旧を試みます。`);
+      log('⚠️ Tasksリストが見つかりません。リスト名から復旧します。');
       Settings.deleteTaskListId();
     }
   }
@@ -246,8 +245,6 @@ function resolveTaskList() {
  * スプレッドシートとTasksの同期処理
  */
 function processTasksSync() {
-  log('--- Tasks同期処理開始 ---');
-
   const listId = resolveTaskList();
   if (!listId) return; // 理由は resolveTaskList 側で Health に記録済み
 
@@ -272,7 +269,7 @@ function processTasksSync() {
   });
 
   if (allRows.length === 0) {
-    log('同期対象の課題が見つかりませんでした。');
+    log('[Tasks] 同期対象の課題はありません。');
     _cleanup(ss); 
     return;
   }
@@ -306,7 +303,7 @@ function processTasksSync() {
       } catch(e) { 
         if(e.message.includes('NotFound')) { 
           originalRow[COL.FLAG] = FLAG.DELETED; sheetContext.updated = true; 
-          log(`Tasksから削除された課題を検出: ${title}`);
+          log(`  ・削除を検出: ${title}`);
         }
       }
     }
@@ -314,7 +311,6 @@ function processTasksSync() {
     // --- 新規課題をTasksに登録（originalRowを操作） ---
     // Tasks IDが空（まだ登録されていない）場合にのみ登録を試みる
     if (!originalRow[COL.TASK_ID] && !TERMINAL_FLAGS.includes(originalRow[COL.FLAG])) {
-      
       let dueObj = parseAssignmentDate(due); 
       
       if (!dueObj) {
@@ -331,7 +327,7 @@ function processTasksSync() {
       // 既に期限が過ぎているかチェック (1日余裕)
       if (dueObj.getTime() < new Date().getTime() - (24 * 3600 * 1000)) { 
         originalRow[COL.FLAG] = FLAG.EXPIRED; sheetContext.updated = true; 
-        log(`期限切れの課題を検出: ${title}`);
+        log(`  ・期限切れ: ${title}`);
         return;
       }
 
@@ -353,7 +349,7 @@ function processTasksSync() {
         originalRow[COL.TASK_ID] = t.id; 
         originalRow[COL.FLAG] = FLAG.REGISTERED; 
         sheetContext.updated = true;
-        log(`Tasks登録: ${task.title}`);
+        log(`  ・登録: ${task.title}`);
       } catch(e) {
         Health.add(`Tasksへの登録に失敗: ${title} - ${e.message}`);
       }
@@ -362,7 +358,7 @@ function processTasksSync() {
 
   // 期限が無い項目（資料など）は正常なので件数だけ。内訳が要るときは
   // メニューの「課題の取りこぼしをチェック」で見る。
-  if (skippedNoDate > 0) log(`期限が無いためTasks登録の対象外: ${skippedNoDate}件`);
+  if (skippedNoDate > 0) log(`[Tasks] 期限が無いため対象外: ${skippedNoDate}件`);
 
   // 期限欄に値があるのに解釈できないのは、日付フォーマットの変更を疑うべき異常。
   // 全部が資料で期限が空、というケースとは区別して警告する。
@@ -391,7 +387,7 @@ function processTasksSync() {
   });
   
   _cleanup(ss); 
-  log('--- Tasks同期処理完了 ---');
+  
 }
 
 /**
@@ -402,7 +398,7 @@ function _cleanup(ss) {
   const thresh = days * 86400000; 
   const now = new Date().getTime();
   
-  log(`--- シートクリーンアップ開始 (猶予期間: ${days}日) ---`);
+  
   let removed = 0;
 
   [SHEET_NAME_WEBCLASS, SHEET_NAME_CLASSROOM].forEach(name => {
@@ -436,5 +432,5 @@ function _cleanup(ss) {
       }
     }
   });
-  log(`--- シートクリーンアップ完了 (${removed}行を削除) ---`);
+  log(`[Tasks] 不要な${removed}行をシートから削除 (猶予${days}日)`);
 }
