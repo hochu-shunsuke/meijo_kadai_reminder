@@ -6,6 +6,10 @@
 class WebClassClient {
   constructor() {
     this.cookies = {};
+    // User-Agentはインスタンスごとに1つ選んで固定する。
+    // リクエストごとに変えると、1セッション中に端末が変わったように見えて不自然になり、
+    // UAをセッションに紐づける実装では認証が通らなくなる恐れがある。
+    this.userAgent = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
   }
 
   login(userid, password) {
@@ -76,8 +80,7 @@ class WebClassClient {
   }
 
   _headers(url) {
-    const ua = USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-    const headers = { 'User-Agent': ua, 'Referer': url };
+    const headers = { 'User-Agent': this.userAgent, 'Referer': url };
     const cookieStr = Object.keys(this.cookies).map(k => `${k}=${this.cookies[k]}`).join('; ');
     if (cookieStr) headers['Cookie'] = cookieStr;
     return headers;

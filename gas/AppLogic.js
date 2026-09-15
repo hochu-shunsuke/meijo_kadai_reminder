@@ -207,49 +207,21 @@ function processTasksSync() {
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   
-  const sheetDataMap = new Map(); 
-  
-  // 1. 各シートの最新データを読み込み、Tasks ID/Flagを復元するためのマップを作成
+  const sheetDataMap = new Map();
+  const allRows = [];
+
+  // 各シートを読み込み、2シートを1つの配列に統合する。
+  // 書き戻す先が分かるように、シート名と元の行番号を後ろに付けておく。
+  // （Tasks ID / フラグの復元は SheetUtils.writeToSheet が取得時に済ませているので、ここでは不要）
   [SHEET_NAME_WEBCLASS, SHEET_NAME_CLASSROOM].forEach(name => {
     const sheet = ss.getSheetByName(name);
     if (!sheet || sheet.getLastRow() <= 1) return;
-    
-    // シートの全課題データ（取得直後の、Tasks ID/Flagが空の可能性が高いデータ）を取得
-    const data = sheet.getRange(2, 1, sheet.getLastRow()-1, HEADER.length).getValues();
-    
-    sheetDataMap.set(name, { rows: data, sheet: sheet, updated: false });
-  });
 
-  // 2. 既存の Tasks IDとFlag を保持するためのマップを作成（全シートを統合）
-  const previousDataMap = new Map();
-  [SHEET_NAME_WEBCLASS, SHEET_NAME_CLASSROOM].forEach(name => {
-      const sheet = ss.getSheetByName(name);
-      if (!sheet || sheet.getLastRow() <= 1) return;
-      const data = sheet.getRange(2, 1, sheet.getLastRow()-1, HEADER.length).getValues();
-      data.forEach(row => {
-          const link = row[5]; 
-          const tasksId = row[6]; 
-          const registeredFlag = row[7]; 
-          if (link && (tasksId || registeredFlag)) {
-              previousDataMap.set(link, [tasksId, registeredFlag]);
-          }
-      });
-  });
+    const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, HEADER.length).getValues();
+    sheetDataMap.set(name, { rows: rows, sheet: sheet, updated: false });
 
-  const allRows = []; 
-  // 3. 最新データにTasks ID/Flagをマージし、allRowsに統合
-  sheetDataMap.forEach((context, sheetName) => {
-      context.rows.forEach((row, originalIndex) => {
-          const link = row[5];
-          if (previousDataMap.has(link)) {
-              const [tasksId, registeredFlag] = previousDataMap.get(link);
-              row[6] = tasksId;
-              row[7] = registeredFlag;
-          }
-          allRows.push([...row, sheetName, originalIndex]); // 統合データに追加
-      });
+    rows.forEach((row, originalIndex) => allRows.push([...row, name, originalIndex]));
   });
-
 
   if (allRows.length === 0) {
     log('同期対象の課題が見つかりませんでした。');
@@ -277,15 +249,15 @@ function processTasksSync() {
 
     
     // --- 課題の完了状態をTasksからシートへ同期（originalRowを操作） ---
-    if (originalRow[6] && !['COMPLETED','DELETED'].includes(originalRow[7])) {
+    if (originalRow[COL.TASK_ID] && ![FLAG.COMPLETED, FLAG.DELETED].includes(originalRow[COL.FLAG])) {
       try {
-        const taskStatus = Tasks.Tasks.get(listId, originalRow[6]).status;
+        const taskStatus = Tasks.Tasks.get(listId, originalRow[COL.TASK_ID]).status;
         if (taskStatus === 'completed') {
-          originalRow[7] = 'COMPLETED'; sheetContext.updated = true;
+          originalRow[COL.FLAG] = FLAG.COMPLETED; sheetContext.updated = true;
         }
       } catch(e) { 
         if(e.message.includes('NotFound')) { 
-          originalRow[7] = 'DELETED'; sheetContext.updated = true; 
+          originalRow[COL.FLAG] = FLAG.DELETED; sheetContext.updated = true; 
           log(`Tasksから削除された課題を検出: ${title}`);
         }
       }
@@ -293,18 +265,18 @@ function processTasksSync() {
 
     // --- 新規課題をTasksに登録（originalRowを操作） ---
     // Tasks IDが空（まだ登録されていない）場合にのみ登録を試みる
-    if (!originalRow[6] && !['COMPLETED','DELETED','EXPIRED', 'SKIPPED_NODATE'].includes(originalRow[7])) {
+    if (!originalRow[COL.TASK_ID] && !TERMINAL_FLAGS.includes(originalRow[COL.FLAG])) {
       
       let dueObj = parseAssignmentDate(due); 
       
       if (!dueObj) {
-         originalRow[7] = 'SKIPPED_NODATE'; sheetContext.updated = true;
+         originalRow[COL.FLAG] = FLAG.SKIPPED_NODATE; sheetContext.updated = true;
          return;
       }
 
       // 既に期限が過ぎているかチェック (1日余裕)
       if (dueObj.getTime() < new Date().getTime() - (24 * 3600 * 1000)) { 
-        originalRow[7] = 'EXPIRED'; sheetContext.updated = true; 
+        originalRow[COL.FLAG] = FLAG.EXPIRED; sheetContext.updated = true; 
         log(`期限切れの課題を検出: ${title}`);
         return;
       }
@@ -324,8 +296,8 @@ function processTasksSync() {
         
         const t = Tasks.Tasks.insert(task, listId);
         
-        originalRow[6] = t.id; 
-        originalRow[7] = 'REGISTERED'; 
+        originalRow[COL.TASK_ID] = t.id; 
+        originalRow[COL.FLAG] = FLAG.REGISTERED; 
         sheetContext.updated = true;
         log(`Tasks登録: ${task.title}`);
       } catch(e) {
@@ -367,6 +339,7 @@ function _cleanup(ss) {
   const now = new Date().getTime();
   
   log(`--- シートクリーンアップ開始 (猶予期間: ${days}日) ---`);
+  let removed = 0;
 
   [SHEET_NAME_WEBCLASS, SHEET_NAME_CLASSROOM].forEach(name => {
     const sheet = ss.getSheetByName(name);
@@ -375,30 +348,29 @@ function _cleanup(ss) {
     const rows = sheet.getDataRange().getValues();
     
     for (let i = rows.length - 1; i >= 1; i--) {
-      const row = rows[i]; 
-      const [,,,, due,, taskId, flag] = row;
-      
-      let dObj = parseAssignmentDate(due); 
+      const row = rows[i];
+      const [,,,, due,,, flag] = row;
+
+      const dueObj = parseAssignmentDate(due);
+      const pastGrace = dueObj && (now - dueObj.getTime()) > thresh;
 
       let shouldDelete = false;
 
-      if (['COMPLETED','DELETED','EXPIRED', 'SKIPPED_NODATE'].includes(flag)) {
-        
-        if (flag === 'SKIPPED_NODATE' || !dObj) {
-            shouldDelete = true;
-        } else {
-            if ((now - dObj.getTime()) > thresh) shouldDelete = true; 
-        }
-      }
-      
-      if (!taskId && dObj && (now - dObj.getTime()) > thresh) {
-          shouldDelete = true;
+      // 期限から猶予期間が過ぎた行は、状態によらず削除する。
+      // REGISTERED のまま残り続ける行（大学側から消えた課題など）もここで掃除される。
+      // 期限が未来の行は、まだ扱う必要があるので残す。
+      if (pastGrace) shouldDelete = true;
+
+      // 終了済みなのに期限が読み取れない行は、いつ消してよいか判断できないので即削除する。
+      if (TERMINAL_FLAGS.includes(flag) && (flag === FLAG.SKIPPED_NODATE || !dueObj)) {
+        shouldDelete = true;
       }
 
       if (shouldDelete) {
-          sheet.deleteRow(i + 1); 
+        sheet.deleteRow(i + 1);
+        removed++;
       }
     }
   });
-  log('--- シートクリーンアップ完了 ---');
+  log(`--- シートクリーンアップ完了 (${removed}行を削除) ---`);
 }

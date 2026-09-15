@@ -59,6 +59,37 @@ function getTasksSettingsForHtml() {
 // --- 共通ヘルパー関数 ---
 
 /**
+ * ログやメール本文に埋め込む日時文字列。
+ * ログシートのタイムスタンプ列とは別に、メッセージ本文にも日時を残したい場面で使う
+ * （メッセージだけをコピーしたときに日時が失われないようにするため）。
+ */
+function formatStamp(date) {
+  return Utilities.formatDate(date || new Date(), Session.getScriptTimeZone(), 'yyyy/MM/dd HH:mm:ss');
+}
+
+/**
+ * ログシートが無限に伸びないように、古い行を落として直近だけ残す。
+ * 1回のdeleteRowsでまとめて消すので、行数が多くても呼び出しは1回。
+ */
+function trimLogSheet(maxRows) {
+  const limit = Number(maxRows || MAX_LOG_ROWS);
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME_LOG);
+    if (!sheet) return;
+
+    const dataRows = sheet.getLastRow() - 1; // ヘッダーを除く
+    if (dataRows <= limit) return;
+
+    const removeCount = dataRows - limit;
+    sheet.deleteRows(2, removeCount); // 2行目（最も古い行）から削除
+    log(`🧹 ログの古い${removeCount}行を削除しました（直近${limit}行を保持）。`);
+  } catch (e) {
+    console.error('ログ整理エラー: ' + e.message);
+  }
+}
+
+
+/**
  * ログ記録
  */
 function log(message) {
@@ -341,7 +372,7 @@ const SheetUtils = {
     if (lastRow > 1) {
       const currentData = sheet.getRange(2, 1, lastRow - 1, HEADER.length).getValues();
       currentData.forEach(row => {
-        const link = row[5]; // 課題リンクを一意キーとして使う
+        const link = row[COL.LINK]; // 課題リンクを一意キーとして使う
         if (link) existingByLink.set(link, row);
       });
     }
@@ -349,12 +380,12 @@ const SheetUtils = {
     // --- 新しいデータに既存のTasks ID / フラグを引き継ぐ ---
     const newLinks = new Set();
     newAssignments.forEach(row => {
-      const link = row[5];
+      const link = row[COL.LINK];
       newLinks.add(link);
       const prev = existingByLink.get(link);
       if (prev) {
-        row[6] = prev[6]; // Tasks ID
-        row[7] = prev[7]; // 登録済みフラグ
+        row[COL.TASK_ID] = prev[COL.TASK_ID]; // Tasks ID
+        row[COL.FLAG] = prev[COL.FLAG]; // 登録済みフラグ
       }
     });
 
@@ -365,7 +396,7 @@ const SheetUtils = {
     const preserved = [];
     existingByLink.forEach((row, link) => {
       if (newLinks.has(link)) return;
-      if (row[6] || row[7]) preserved.push(row);
+      if (row[COL.TASK_ID] || row[COL.FLAG]) preserved.push(row);
     });
 
     const rows = newAssignments.concat(preserved);

@@ -106,7 +106,8 @@ function resetAllSettings() {
  * 日次実行メイン関数
  */
 function dailySystemRun() {
-  log('--- システム実行開始 ---');
+  const startedAt = new Date();
+  log(`--- システム実行開始 (${formatStamp(startedAt)}) ---`);
   Health.reset();
 
   // 各段は独立して動かす。WebClassがコケてもClassroomは試す。
@@ -128,6 +129,10 @@ function dailySystemRun() {
     Health.add(`Tasksへの同期に失敗: ${e.message}`);
   }
 
-  log('--- システム実行完了 ---');
+  const finishedAt = new Date();
+  const elapsedSec = Math.round((finishedAt - startedAt) / 1000);
+  log(`--- システム実行完了 (${formatStamp(finishedAt)} / 所要 ${elapsedSec}秒) ---`);
+
   Health.syncToTasks();
+  trimLogSheet();
 }
