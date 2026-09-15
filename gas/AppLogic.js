@@ -61,18 +61,24 @@ function processWebClass() {
   if (courses.length === 0) {
     Health.add('WebClassのコースを1件も検出できませんでした。WebClass側のHTML構造が変わった可能性があります。');
   }
+  log(`WebClassコースを${courses.length}件検出`);
 
   const rows = [];
   courses.forEach(c => {
-    let cName = c.name.replace(/^\s*\d+\s*/, '').replace(/\s*\(.*\)\s*$/, '').trim();
+    const cName = c.name.replace(/^\s*\d+\s*/, '').replace(/\s*\(.*\)\s*$/, '').trim();
     try {
       const html = client.fetchWithSession(c.url);
-      const asses = WebClassParser.parseCourseContents(html);
-      
-      asses.forEach(a => {
-        // Tasks ID(6) と フラグ(7) は空でセット
+      const items = WebClassParser.parseCourseContents(html);
+      let dated = 0;
+
+      items.forEach(a => {
+        // Tasks ID とフラグは取得時点では空。writeToSheet が既存の値を引き継ぐ。
         rows.push(['WebClass', cName, a.title, a.start, a.end, a.shareLink, '', '']);
+        if (parseAssignmentDate(a.end)) dated++;
       });
+
+      // 「項目」には課題だけでなく資料なども含まれる。期限が読めたものだけがTasksの対象になる。
+      log(`  ✅ ${cName}: 項目${items.length}件 / 期限付き${dated}件`);
     } catch (e) {
       Health.add(`WebClass「${cName}」の課題取得に失敗: ${e.message}`);
     }

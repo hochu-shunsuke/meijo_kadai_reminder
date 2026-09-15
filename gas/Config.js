@@ -42,8 +42,10 @@ const TERMINAL_FLAGS = [FLAG.COMPLETED, FLAG.DELETED, FLAG.EXPIRED, FLAG.SKIPPED
 // --- システム定数 ---
 const MAX_REDIRECTS = 15;
 
-// ログシートに残す最大行数（ヘッダーを除く）。1実行あたり20行前後なので、約100実行分。
-const MAX_LOG_ROWS = 2000;
+// ログシートに残す最大行数（ヘッダーを除く）。
+// 1実行あたり30〜35行程度なので、5000行で約150実行分（1日2回なら約2か月半）。
+// 2列しか使わないので1万セル程度。スプレッドシートの上限(1000万セル)から見れば誤差。
+const MAX_LOG_ROWS = 5000;
 
 // --- 正規表現 ---
 const REGEX = {
